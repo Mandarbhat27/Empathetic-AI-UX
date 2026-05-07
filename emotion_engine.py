@@ -1,15 +1,46 @@
 """
-Emotion Detection Engine
-Uses rule-based keyword matching + optional transformer model
-Runs 100% locally on CPU — no GPU needed
+Emotion Detection Engine — v2
+Dual-mode: DistilBERT (primary) + Keyword NLP (fallback)
+Runs 100% on CPU — no GPU needed
+Install: pip install transformers torch --break-system-packages
 """
 
 import re
 
-# ─── Keyword-based emotion lexicon ─────────────────────────────────────────────
+# ─── Try loading DistilBERT model ───────────────────────────────────────────────
+_pipeline = None
+
+def _load_model():
+    global _pipeline
+    if _pipeline is not None:
+        return _pipeline
+    try:
+        from transformers import pipeline
+        _pipeline = pipeline(
+            "text-classification",
+            model="j-hartmann/emotion-english-distilroberta-base",
+            top_k=1,
+            device=-1  # CPU only, no GPU needed
+        )
+        return _pipeline
+    except Exception:
+        return None
+
+# ─── Model label → our 7 emotions ──────────────────────────────────────────────
+MODEL_LABEL_MAP = {
+    "joy":      "happy",
+    "sadness":  "sad",
+    "anger":    "angry",
+    "fear":     "anxious",
+    "disgust":  "angry",
+    "surprise": "excited",
+    "neutral":  "neutral",
+}
+
+# ─── Keyword fallback lexicon ───────────────────────────────────────────────────
 EMOTION_KEYWORDS = {
     "happy": [
-        "happy", "great", "wonderful", "amazing", "fantastic", "joyful", "excited",
+        "happy", "great", "wonderful", "amazing", "fantastic", "joyful",
         "blessed", "grateful", "love", "awesome", "good", "glad", "cheerful",
         "thrilled", "elated", "pleased", "delighted", "smile", "laugh", "fun",
         "celebrate", "winning", "success", "proud", "confident", "enjoy"
@@ -17,25 +48,25 @@ EMOTION_KEYWORDS = {
     "sad": [
         "sad", "unhappy", "depressed", "miserable", "crying", "tears", "grief",
         "heartbroken", "lonely", "alone", "hopeless", "helpless", "empty",
-        "worthless", "hurt", "pain", "lost", "miss", "gone", "failure", "awful",
+        "worthless", "hurt", "pain", "lost", "miss", "failure", "awful",
         "terrible", "horrible", "bad", "down", "low", "blue", "sorrow"
     ],
     "angry": [
         "angry", "furious", "mad", "rage", "hate", "annoyed", "frustrated",
         "irritated", "livid", "outraged", "fed up", "sick of", "tired of",
-        "pissed", "upset", "bitter", "resentful", "betrayed", "unfair", "wrong"
+        "upset", "bitter", "resentful", "betrayed", "unfair", "wrong"
     ],
     "anxious": [
         "anxious", "anxiety", "worried", "nervous", "scared", "fear", "panic",
-        "overthinking", "dread", "uneasy", "tense", "overwhelmed", "stress",
-        "what if", "cant sleep", "can't sleep", "racing thoughts", "unsure",
+        "overthinking", "dread", "uneasy", "tense", "overwhelmed",
+        "what if", "cant sleep", "can't sleep", "racing thoughts",
         "uncertain", "doubt", "afraid", "terrified", "paranoid"
     ],
     "stressed": [
         "stressed", "stress", "pressure", "deadline", "too much", "overwhelmed",
         "exhausted", "burnout", "burn out", "tired", "no time", "busy",
         "overloaded", "swamped", "can't cope", "cant cope", "falling behind",
-        "behind schedule", "workload", "hectic", "chaos", "mess"
+        "workload", "hectic", "chaos", "mess"
     ],
     "excited": [
         "excited", "thrilled", "pumped", "hyped", "cant wait", "can't wait",
@@ -45,61 +76,68 @@ EMOTION_KEYWORDS = {
     ]
 }
 
-NEGATION_WORDS = ["not", "no", "never", "don't", "dont", "didn't", "didnt", "isn't", "isnt", "wasn't", "wasnt"]
+NEGATION_WORDS = [
+    "not", "no", "never", "don't", "dont", "didn't", "didnt",
+    "isn't", "isnt", "wasn't", "wasnt"
+]
 
-def detect_emotion(text: str) -> str:
+
+def detect_emotion(text: str, use_model: bool = True) -> str:
     """
-    Detect emotion from text using weighted keyword matching.
-    Returns: emotion string
+    Detect emotion — tries DistilBERT first, falls back to keyword NLP.
+    Returns: happy / sad / angry / anxious / stressed / excited / neutral
     """
+    if use_model:
+        result = _detect_with_model(text)
+        if result:
+            return result
+    return _detect_with_keywords(text)
+
+
+def _detect_with_model(text: str):
+    try:
+        pipe = _load_model()
+        if pipe is None:
+            return None
+        result = pipe(text[:512])
+        label = result[0][0]["label"].lower()
+        return MODEL_LABEL_MAP.get(label, "neutral")
+    except Exception:
+        return None
+
+
+def _detect_with_keywords(text: str) -> str:
     text_lower = text.lower()
     words = re.findall(r'\b\w+\b', text_lower)
-
-    # Check for negations
     has_negation = any(neg in words for neg in NEGATION_WORDS)
-
-    scores = {emotion: 0 for emotion in EMOTION_KEYWORDS}
-
+    scores = {e: 0 for e in EMOTION_KEYWORDS}
     for emotion, keywords in EMOTION_KEYWORDS.items():
-        for keyword in keywords:
-            if keyword in text_lower:
-                # Multi-word keyword
-                if " " in keyword:
-                    scores[emotion] += 2
-                else:
-                    scores[emotion] += 1
-
-    # Negation flips happy ↔ sad
-    if has_negation:
-        if scores["happy"] > 0:
-            scores["sad"] += scores["happy"]
-            scores["happy"] = 0
-
-    # Get highest scoring emotion
+        for kw in keywords:
+            if kw in text_lower:
+                scores[emotion] += 2 if " " in kw else 1
+    if has_negation and scores["happy"] > 0:
+        scores["sad"] += scores["happy"]
+        scores["happy"] = 0
     max_score = max(scores.values())
     if max_score == 0:
         return "neutral"
-
-    # If tie, prioritize by severity
-    priority = ["angry", "anxious", "stressed", "sad", "excited", "happy"]
-    for p in priority:
+    for p in ["angry", "anxious", "stressed", "sad", "excited", "happy"]:
         if scores[p] == max_score:
             return p
+    return "neutral"
 
-    return max(scores, key=scores.get)
+
+def get_detection_method() -> str:
+    pipe = _load_model()
+    return "🤖 DistilBERT" if pipe is not None else "📝 Keyword NLP"
 
 
 def get_emotion_color(emotion: str) -> str:
-    colors = {
-        "happy":   "#F5A623",
-        "sad":     "#6B7FD7",
-        "angry":   "#E05555",
-        "anxious": "#48BB78",
-        "stressed":"#ED8936",
-        "excited": "#D69E2E",
-        "neutral": "#667EEA",
-    }
-    return colors.get(emotion, "#667EEA")
+    return {
+        "happy": "#F5A623", "sad": "#6B7FD7", "angry": "#E05555",
+        "anxious": "#48BB78", "stressed": "#ED8936",
+        "excited": "#D69E2E", "neutral": "#667EEA",
+    }.get(emotion, "#667EEA")
 
 
 def get_emotion_suggestions(emotion: str) -> list:
