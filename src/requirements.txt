@@ -1,0 +1,28 @@
+# EmpathyOS v2 — All Dependencies
+# Install with: pip install -r requirements.txt --break-system-packages
+
+# ── Core (already installed in v1) ──────────────────────────────────────────────
+streamlit==1.35.0
+requests==2.31.0
+python-dotenv==1.0.0
+
+# ── Upgrade 1: DistilBERT Emotion Detection ─────────────────────────────────────
+transformers==4.41.0
+torch>=2.6.0
+
+# ── Upgrade 2: Voice Input ───────────────────────────────────────────────────────
+SpeechRecognition==3.10.4
+# pyaudio — install separately (see SETUP_GUIDE.md)
+
+# ── Upgrade 2b: Face Emotion Detection ──────────────────────────────────────────
+numpy>=1.26.4
+deepface
+tf-keras
+opencv-python-headless
+
+# ── Upgrade 3: ChromaDB Semantic Memory ─────────────────────────────────────────
+chromadb==0.5.0
+sentence-transformers==3.0.0
+
+# ── Upgrade 4: PDF Export ────────────────────────────────────────────────────────
+reportlab==4.2.0

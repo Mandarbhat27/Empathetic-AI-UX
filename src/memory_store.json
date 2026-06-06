@@ -1,0 +1,24 @@
+{
+  "long_term": [
+    {
+      "text": "i am sad",
+      "emotion": "sad",
+      "timestamp": "2026-05-06T20:26:02.840399"
+    },
+    {
+      "text": "i am sad today",
+      "emotion": "sad",
+      "timestamp": "2026-05-07T10:24:49.060767"
+    },
+    {
+      "text": "no one cares about me",
+      "emotion": "neutral",
+      "timestamp": "2026-05-07T10:25:11.240373"
+    }
+  ],
+  "emotion_history": [
+    "sad",
+    "sad",
+    "neutral"
+  ]
+}
